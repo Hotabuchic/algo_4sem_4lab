@@ -18,7 +18,6 @@ class DatasetFillingApp(QWidget):
         self.resize(1200, 500)
 
         self.dataFrame = pd.DataFrame()
-        print(type(self.dataFrame))
         self.originalDataFrame = pd.DataFrame()
         self.dataFrameRemove = pd.DataFrame()
         self.encoders = {}
@@ -148,7 +147,7 @@ class DatasetFillingApp(QWidget):
 
             method = self.restoreMethodCombo.currentText()
             if method == "Метод подстановки с подбором внутри групп":
-                self.groupBasedImputation(['City to', 'Train', 'Date from', 'Cost'])
+                self.groupBasedImputation(['City to', 'Train', 'Date from', 'Date to', 'Cost'])
             elif method == "Метод заполнения значением медианы":
                 self.medianImputation()
             elif method == "Метод восстановления пропущенного значения на основе Zet-алгоритма":
@@ -192,24 +191,21 @@ class DatasetFillingApp(QWidget):
 
         self.dataFrame = df
 
-    def groupBasedImputation(self, group_columns):
-        """
-        Улучшенный алгоритм групповой импутации:
-        1. Для каждой строки с пропусками ищет наиболее похожую строку по group_columns
-        2. Чем больше совпадений в group_columns - тем выше приоритет
-        3. Заполняет ВСЕ пропуски в строке значениями из найденного донора
-        4. Если несколько строк с одинаковым числом совпадений - берет первую
-        """
+    def groupBasedImputation(self, group_columns, neighbor_window=1000):
         df = self.dataFrame.copy()
 
         # Для каждой строки с пропусками
         for idx, row in df[df.isna().any(axis=1)].iterrows():
             current_values = row[group_columns]
-            print(idx)
 
-            # Вычисляем степень совпадения со всеми строками
+            # Определяем окно ближайших строк
+            start_idx = max(0, idx - neighbor_window // 2)
+            end_idx = min(len(df), idx + neighbor_window // 2)
+            window_df = df.iloc[start_idx:end_idx]
+
+            # Вычисляем степень совпадения только с ближайшими строками
             similarity_scores = []
-            for candidate_idx, candidate_row in df.iterrows():
+            for candidate_idx, candidate_row in window_df.iterrows():
                 if candidate_idx == idx:  # Пропускаем текущую строку
                     continue
 
@@ -236,6 +232,8 @@ class DatasetFillingApp(QWidget):
                         df.at[idx, col] = best_match[col]
 
         self.dataFrame = df
+        self.medianImputation()
+        self.updateTable()
 
     def zetAlgorithmImputation(self, z_threshold=1.96):
         median_cols = ['Date from', 'Date to', 'Cost']
@@ -279,7 +277,6 @@ class DatasetFillingApp(QWidget):
         self.dataFrame = df
 
     def convert_to_numeric(self, numeric_df):
-        """Преобразует все столбцы в числовой вид"""
         df = numeric_df.copy()
         self.original_dtypes = df.dtypes.to_dict()
 
@@ -295,7 +292,6 @@ class DatasetFillingApp(QWidget):
         return df
 
     def convert_back_to_original(self, numeric_df):
-        """Преобразует данные обратно в оригинальный формат"""
         df = numeric_df.copy()
 
         for col in df.columns:
